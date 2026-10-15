@@ -119,6 +119,49 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ key: 'pill-new-btn' })).toBeDefined()
   })
 
+  test(`${surface}: Supabase's mail limit reads as plain Danish`, async ($, on) => {
+    on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
+    on('http.fetch', () => json(429, { code: 429, error_code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' }))
+
+    const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
+    await ui.input({ key: 'email', text: 'bip@firma.dk' })
+
+    expect(await ui.find({ text: /for mange login-mails/ })).toBeDefined()
+    expect(await ui.find({ key: 'email' })).toBeDefined()
+  })
+
+  test(`${surface}: an invitation key signs in without any mail`, async ($, on) => {
+    const logins: unknown[] = []
+    const store = new Map<string, unknown>()
+
+    on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
+    on('ui.status', () => ({ value: undefined }))
+    on('clock.now', () => ({ value: Date.UTC(2026, 9, 15, 10) }))
+    on('store.get', (_, e) => ({ value: store.get(e.key) }))
+    on('store.set', (_, e) => {
+      store.set(e.key, e.value)
+      return { value: undefined }
+    })
+    on('http.fetch', (_, e) => {
+      if (e.url.endsWith('/auth/v1/token?grant_type=password')) {
+        logins.push(JSON.parse(e.init?.body ?? '{}'))
+        return json(200, { access_token: 'jwt', refresh_token: 'r', expires_in: 3600, user: { email: 'bip@firma.dk' } })
+      }
+      return json(200, [])
+    })
+
+    const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
+
+    await ui.input({ key: 'invite-key', text: 'ikke en nøgle' })
+    expect(await ui.find({ text: /ligner ikke en invitationsnøgle/ })).toBeDefined()
+    expect(logins).toEqual([])
+
+    await ui.input({ key: 'invite-key', text: '  tc1:BIP@firma.dk:abcdefghijklmnopqrstuvwxyz0123  ' })
+    expect(logins).toEqual([{ email: 'bip@firma.dk', password: 'abcdefghijklmnopqrstuvwxyz0123' }])
+    expect(store.get('session')).toMatchObject({ email: 'bip@firma.dk' })
+    expect(await ui.find({ key: 'pill-new-btn' })).toBeDefined()
+  })
+
   test(`${surface}: a wrong email never reaches the server`, async ($, on) => {
     let calls = 0
     on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))

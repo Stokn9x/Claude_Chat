@@ -123,7 +123,10 @@ const requestCode = async ($: $, input: string) => {
 
   await setView($, { isBusy: true, error: null })
   const res = await call($, '/auth/v1/otp', { method: 'POST', body: { email, create_user: true } })
-  if (!res.ok) return fail($, `Kunne ikke sende koden: ${res.message}`)
+  if (res.status === 429) {
+    return fail($, 'Der er sendt for mange login-mails lige nu. Vent lidt, og prøv igen. Bliver det ved, så bed den, der driver chatten, om at hæve mail-grænsen i Supabase.')
+  }
+  if (!res.ok) return fail($, `Kunne ikke sende login-mailen: ${res.message}`)
 
   await setView($, { phase: 'code', email, isBusy: false })
 }
@@ -168,6 +171,32 @@ const verifyCode = async ($: $, input: string) => {
   if (!res.ok || !res.data) return fail($, `Login virkede ikke: ${res.message}`)
 
   await saveSession($, res.data, email)
+  await enterChat($)
+}
+
+// An invitation key, for signing in without a mail: `tc1:<email>:<secret>`,
+// the secret being the account's password, set by whoever runs the project.
+const parseKey = (input: string) => {
+  const match = /^tc1:([^:\s]+@[^:\s]+):([A-Za-z0-9_-]{24,})$/.exec(input.trim())
+
+  return match?.[1] && match[2] ? { email: match[1].toLowerCase(), password: match[2] } : null
+}
+
+const signInWithKey = async ($: $, input: string) => {
+  const key = parseKey(input)
+  if (!key) return fail($, 'Det ligner ikke en invitationsnøgle. Den starter med tc1:')
+
+  await setView($, { isBusy: true, error: null })
+  const res = await call<{ access_token: string; refresh_token: string; expires_in: number; user?: { email?: string } }>(
+    $,
+    '/auth/v1/token?grant_type=password',
+    { method: 'POST', body: { email: key.email, password: key.password } },
+  )
+  if (!res.ok || !res.data) {
+    return fail($, res.status === 400 ? 'Nøglen virker ikke (længere). Bed om en ny.' : `Login virkede ikke: ${res.message}`)
+  }
+
+  await saveSession($, res.data, key.email)
   await enterChat($)
 }
 
@@ -500,6 +529,10 @@ export const register: Register = on => {
 
     await $.ui.open({ id: PANE, title: '💬 Chat', focus: true })
     if (!args) return { text: 'Chatten er åben.' }
+    if (word === 'nøgle' || word === 'key' || parseKey(args)) {
+      await signInWithKey($, parseKey(args) ? args : tail)
+      return { text: (await read($, view)).error ?? 'Du er logget ind i chatten 💬' }
+    }
     if (phase !== 'chat') return { text: 'Log ind i chatpanelet først.' }
 
     if (word === 'inviter' || word === 'invite') {
@@ -612,6 +645,20 @@ export const register: Register = on => {
               submitLabel={v.isBusy ? 'sender…' : 'Send mail →'}
               autoFocus
               onSubmit={value => void requestCode($, value)}
+            />,
+          ])}
+          {card('key-login', [
+            <Text key="t" color={ink} bold>
+              Har du fået en invitationsnøgle?
+            </Text>,
+            <Text key="d" color={softInk} wrap="wrap">
+              Indsæt den her, så logger du ind uden mail.
+            </Text>,
+            <Input
+              key="invite-key"
+              placeholder="tc1:…"
+              submitLabel={v.isBusy ? 'logger ind…' : 'Log ind →'}
+              onSubmit={value => void signInWithKey($, value)}
             />,
           ])}
           {error}
