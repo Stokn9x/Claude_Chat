@@ -72,12 +72,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
 
     await ui.input({ key: 'email', text: 'Amalie@Firma.dk' })
-    expect(await ui.find({ text: /sendt en mail til amalie@firma\.dk/ })).toBeDefined()
+    expect(await ui.find({ key: 'code' })).toBeDefined()
 
     await ui.input({ key: 'code', text: '123 456' })
     expect(await ui.find({ text: /Hej Amalie!/ })).toBeDefined()
-    expect(await ui.find({ text: /2 medlemmer/ })).toBeDefined()
-    expect(await ui.find({ text: /# Amalie & Cecilie/ })).toBeDefined()
+    expect(await ui.find({ key: 'pill-r1-btn' })).toBeDefined()
     expect(store.get('session')).toMatchObject({ email: 'amalie@firma.dk' })
 
     await ui.input({ key: 'compose', text: 'Hvad så?' })
@@ -117,7 +116,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.input({ key: 'code', text: safe })
 
     expect(verified).toEqual([{ token_hash: 'pkce_abc123', type: 'signup' }])
-    expect(await ui.find({ text: /Du er ikke med i et rum endnu/ })).toBeDefined()
+    expect(await ui.find({ key: 'pill-new-btn' })).toBeDefined()
   })
 
   test(`${surface}: a wrong email never reaches the server`, async ($, on) => {

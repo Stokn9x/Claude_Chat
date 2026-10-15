@@ -377,6 +377,100 @@ const dayLabel = (iso: string, nowMs: number) => {
   return `${d.getDate()}. ${months[d.getMonth()] ?? ''}`
 }
 
+// ─── Banners (desktop) ──────────────────────────────────────────────────
+
+// Fixed light surfaces with their own ink, so cards and bubbles look the
+// same on a light pane and a dark one.
+const ink = '#14212E'
+const softInk = '#5B6B7A'
+const cloud = '#EEF2F6'
+const sky = '#F2F8FD'
+const skyLine = '#CFE3F5'
+const mint = '#E6F6F4'
+
+const FONT = 'Segoe UI, system-ui, -apple-system, sans-serif'
+const BANNER_W = 640
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+
+const decor = (w: number, h: number) => `
+  <circle cx="${w - 70}" cy="-20" r="90" fill="#FFFFFF" opacity="0.08"/>
+  <circle cx="${w - 10}" cy="${h + 10}" r="60" fill="#FFFFFF" opacity="0.07"/>
+  <circle cx="${w * 0.55}" cy="${h + 30}" r="70" fill="#FFFFFF" opacity="0.05"/>
+  <path d="M0 ${h - 18} C ${w * 0.2} ${h - 34}, ${w * 0.4} ${h - 2}, ${w * 0.62} ${h - 16} S ${w * 0.9} ${h - 30}, ${w} ${h - 14} L ${w} ${h} L 0 ${h} Z" fill="#FFFFFF" opacity="0.10"/>`
+
+const gradient = (id: string) => `
+  <linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#1E7FC9"/><stop offset="0.6" stop-color="#1B95B8"/><stop offset="1" stop-color="#17A398"/>
+  </linearGradient>`
+
+const roomBannerSvg = (room: string, members: string[], subtitle: string) => {
+  const h = 104
+  const shown = members.slice(0, 5)
+  const extra = members.length - shown.length
+  const startX = BANNER_W - 28 - (shown.length - 1) * 30 - (extra > 0 ? 30 : 0)
+  const faces = shown
+    .map(
+      (email, i) => `
+  <circle cx="${startX + i * 30}" cy="40" r="17" fill="${colorFor(email)}" stroke="#FFFFFF" stroke-width="3"/>
+  <text x="${startX + i * 30}" y="45.5" text-anchor="middle" font-family="${FONT}" font-size="15" font-weight="700" fill="#FFFFFF">${escapeXml(initial(nameFrom(email)))}</text>`,
+    )
+    .join('')
+  const more =
+    extra > 0
+      ? `<circle cx="${startX + shown.length * 30}" cy="40" r="17" fill="#FFFFFF" opacity="0.9"/><text x="${startX + shown.length * 30}" y="45" text-anchor="middle" font-family="${FONT}" font-size="12" font-weight="700" fill="#1E7FC9">+${extra}</text>`
+      : ''
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BANNER_W} ${h}" width="${BANNER_W}" height="${h}">
+  <defs>${gradient('g')}<clipPath id="r"><rect width="${BANNER_W}" height="${h}" rx="18"/></clipPath></defs>
+  <g clip-path="url(#r)">
+    <rect width="${BANNER_W}" height="${h}" fill="url(#g)"/>
+    ${decor(BANNER_W, h)}
+    <text x="26" y="30" font-family="${FONT}" font-size="12" font-weight="600" letter-spacing="2" fill="#FFFFFF" opacity="0.75">TEAM CHAT</text>
+    <text x="26" y="62" font-family="${FONT}" font-size="28" font-weight="700" fill="#FFFFFF"># ${escapeXml(clip(room, 26))}</text>
+    <text x="26" y="86" font-family="${FONT}" font-size="13" fill="#FFFFFF" opacity="0.85">${escapeXml(subtitle)}</text>
+    ${faces}${more}
+  </g>
+</svg>`
+}
+
+const welcomeSvg = (title: string, subtitle: string) => {
+  const h = 150
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BANNER_W} ${h}" width="${BANNER_W}" height="${h}">
+  <defs>${gradient('g')}<clipPath id="r"><rect width="${BANNER_W}" height="${h}" rx="18"/></clipPath></defs>
+  <g clip-path="url(#r)">
+    <rect width="${BANNER_W}" height="${h}" fill="url(#g)"/>
+    ${decor(BANNER_W, h)}
+    <g transform="translate(${BANNER_W - 190} 26)">
+      <rect x="0" y="10" width="120" height="58" rx="18" fill="#FFFFFF" opacity="0.95"/>
+      <path d="M22 66 L14 86 L40 68 Z" fill="#FFFFFF" opacity="0.95"/>
+      <rect x="18" y="28" width="70" height="8" rx="4" fill="#1E7FC9" opacity="0.5"/>
+      <rect x="18" y="44" width="48" height="8" rx="4" fill="#1E7FC9" opacity="0.3"/>
+      <rect x="70" y="48" width="96" height="48" rx="16" fill="#0E5A8A"/>
+      <path d="M150 94 L160 110 L138 96 Z" fill="#0E5A8A"/>
+      <circle cx="98" cy="72" r="4.5" fill="#FFFFFF"/><circle cx="118" cy="72" r="4.5" fill="#FFFFFF" opacity="0.8"/><circle cx="138" cy="72" r="4.5" fill="#FFFFFF" opacity="0.6"/>
+    </g>
+    <text x="28" y="36" font-family="${FONT}" font-size="12" font-weight="600" letter-spacing="2" fill="#FFFFFF" opacity="0.75">TEAM CHAT</text>
+    <text x="28" y="80" font-family="${FONT}" font-size="28" font-weight="700" fill="#FFFFFF">${escapeXml(title)}</text>
+    <text x="28" y="108" font-family="${FONT}" font-size="14" fill="#FFFFFF" opacity="0.88">${escapeXml(subtitle)}</text>
+  </g>
+</svg>`
+}
+
+const emptySvg = (title: string, subtitle: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BANNER_W} 170" width="${BANNER_W}" height="170">
+  <g transform="translate(${BANNER_W / 2 - 60} 14)">
+    <circle cx="60" cy="44" r="44" fill="#1E7FC9" opacity="0.08"/>
+    <rect x="22" y="18" width="62" height="38" rx="14" fill="#1E7FC9" opacity="0.85"/>
+    <path d="M34 54 L28 68 L48 56 Z" fill="#1E7FC9" opacity="0.85"/>
+    <rect x="46" y="40" width="54" height="34" rx="12" fill="#17A398"/>
+    <path d="M88 72 L96 84 L78 74 Z" fill="#17A398"/>
+    <text x="73" y="63" text-anchor="middle" font-size="16">👋</text>
+  </g>
+  <text x="${BANNER_W / 2}" y="128" text-anchor="middle" font-family="${FONT}" font-size="17" font-weight="700" fill="${ink}">${escapeXml(title)}</text>
+  <text x="${BANNER_W / 2}" y="152" text-anchor="middle" font-family="${FONT}" font-size="13" fill="${softInk}">${escapeXml(subtitle)}</text>
+</svg>`
+
 // ─── Hooks ──────────────────────────────────────────────────────────────
 
 export const register: Register = on => {
@@ -452,6 +546,8 @@ export const register: Register = on => {
     const Svg = 'Svg' in kit ? kit.Svg : null
     const v = await read($, view)
     const c = await read($, chat)
+    // Fill the pane's height so the composer sits at the bottom.
+    const fill = e.viewport?.rows ? Math.max(10, e.viewport.rows - 3) : undefined
 
     const avatar = (name: string, email: string, size = 28) =>
       Svg ? (
@@ -462,62 +558,96 @@ export const register: Register = on => {
         </Text>
       )
 
-    const error = v.error ? (
-      <Box borderStyle="round" borderColor="error" paddingX={1}>
-        <Text color="error" wrap="wrap">
-          {v.error}
-        </Text>
-      </Box>
-    ) : null
-
-    const brand = (subtitle: string) => (
-      <Box flexDirection="column">
-        <Text color={accent} bold>
-          💬 Team Chat
-        </Text>
-        <Text dimColor wrap="wrap">
-          {subtitle}
-        </Text>
+    const card = (key: string, children: RenderElement | RenderElement[], tint: 'sky' | 'error' = 'sky') => (
+      <Box
+        key={key}
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={tint === 'error' ? '#F2B8B5' : skyLine}
+        backgroundColor={tint === 'error' ? '#FDECEA' : sky}
+        paddingX={2}
+        paddingY={1}
+        gap={1}
+      >
+        {children}
       </Box>
     )
+
+    const error = v.error
+      ? card(
+          'error',
+          <Text color="#B3261E" wrap="wrap">
+            {`⚠ ${v.error}`}
+          </Text>,
+          'error',
+        )
+      : null
+
+    const hero = (title: string, subtitle: string) =>
+      Svg ? (
+        <Svg source={welcomeSvg(title, subtitle)} alt={`${title}. ${subtitle}`} />
+      ) : (
+        <Box flexDirection="column">
+          <Text color={accent} bold>
+            {`💬 ${title}`}
+          </Text>
+          <Text dimColor>{subtitle}</Text>
+        </Box>
+      )
 
     if (v.phase === 'signed-out') {
       return (
         <Box flexDirection="column" gap={1} paddingX={1} paddingY={1}>
-          {brand('Chat med dine kolleger lige ved siden af Claude.')}
-          <Box flexDirection="column" borderStyle="round" borderColor={accent} paddingX={1} paddingY={1} gap={1}>
-            <Text bold>Log ind</Text>
-            <Text wrap="wrap">Brug den e-mail, du også bruger til Claude. Du får en mail med et login-link.</Text>
+          {hero('Velkommen', 'Chat med dine kolleger lige ved siden af Claude.')}
+          {card('login', [
+            <Text key="t" color={ink} bold>
+              Log ind med din e-mail
+            </Text>,
+            <Text key="d" color={softInk} wrap="wrap">
+              Brug den samme e-mail som din Claude-konto. Du får en mail med et login-link.
+            </Text>,
             <Input
               key="email"
               placeholder="navn@firma.dk"
-              submitLabel={v.isBusy ? 'sender…' : 'send mail'}
+              submitLabel={v.isBusy ? 'sender…' : 'Send mail →'}
               autoFocus
               onSubmit={value => void requestCode($, value)}
-            />
-          </Box>
+            />,
+          ])}
           {error}
         </Box>
       )
     }
 
     if (v.phase === 'code') {
+      const step = (n: string, text: string) => (
+        <Box key={`step-${n}`} flexDirection="row" gap={1} alignItems="center">
+          <Box borderStyle="round" borderColor={accent} backgroundColor={accent} paddingX={1}>
+            <Text color="#FFFFFF" bold>
+              {n}
+            </Text>
+          </Box>
+          <Text color={ink} wrap="wrap">
+            {text}
+          </Text>
+        </Box>
+      )
+
       return (
         <Box flexDirection="column" gap={1} paddingX={1} paddingY={1}>
-          {brand(`Vi har sendt en mail til ${v.email}.`)}
-          <Box flexDirection="column" borderStyle="round" borderColor={accent} paddingX={1} paddingY={1} gap={1}>
-            <Text bold>Indsæt linket fra mailen</Text>
-            <Text wrap="wrap">1. Klik ikke på linket.</Text>
-            <Text wrap="wrap">2. Højreklik på det og vælg "Kopiér link".</Text>
-            <Text wrap="wrap">3. Indsæt det her og tryk Enter.</Text>
+          {hero('Tjek din mail', `Vi har sendt et login-link til ${v.email}`)}
+          {card('code', [
+            step('1', 'Klik ikke på linket i mailen.'),
+            step('2', 'Højreklik på det, og vælg "Kopiér link".'),
+            step('3', 'Indsæt det her, og tryk Enter.'),
             <Input
               key="code"
               placeholder="https://… (eller en kode, hvis mailen har en)"
-              submitLabel={v.isBusy ? 'tjekker…' : 'log ind'}
+              submitLabel={v.isBusy ? 'tjekker…' : 'Log ind →'}
               autoFocus
               onSubmit={value => void verifyCode($, value)}
-            />
-          </Box>
+            />,
+          ])}
           {error}
           <Button key="other-email" label="← Brug en anden e-mail" plain dimColor onPress={() => setView($, { phase: 'signed-out', error: null })} />
         </Box>
@@ -529,74 +659,93 @@ export const register: Register = on => {
     const text = await read($, draft)
     const now = await $.clock.now()
     const me = (c.me ?? '').toLowerCase()
+    const others = c.members.filter(m => m.toLowerCase() !== me)
 
     const toggle = (mode: View['mode']) => () => setView($, { mode: v.mode === mode ? 'none' : mode, error: null })
 
     const modeCard =
-      v.mode === 'invite' ? (
-        <Box flexDirection="column" borderStyle="round" borderColor={accent} paddingX={1} gap={0}>
-          <Text bold>Inviter til {room?.name ?? 'rummet'}</Text>
-          <Text dimColor wrap="wrap">
-            Personen logger ind med denne e-mail og ser rummet med det samme.
-          </Text>
-          <Input key="invite" placeholder="kollega@firma.dk" submitLabel="inviter" autoFocus onSubmit={value => void invite($, value)} />
-        </Box>
-      ) : v.mode === 'new-room' ? (
-        <Box flexDirection="column" borderStyle="round" borderColor={accent} paddingX={1}>
-          <Text bold>Nyt rum</Text>
-          <Input key="new-room" placeholder="Fx Projekt Nord" submitLabel="opret" autoFocus onSubmit={value => void createRoom($, value)} />
-        </Box>
-      ) : null
+      v.mode === 'invite'
+        ? card('invite-card', [
+            <Text key="t" color={ink} bold>
+              {`Inviter til ${room?.name ?? 'rummet'}`}
+            </Text>,
+            <Text key="d" color={softInk} wrap="wrap">
+              Personen logger ind med denne e-mail og ser rummet med det samme.
+            </Text>,
+            <Input key="invite" placeholder="kollega@firma.dk" submitLabel="Inviter →" autoFocus onSubmit={value => void invite($, value)} />,
+          ])
+        : v.mode === 'new-room'
+          ? card('room-card', [
+              <Text key="t" color={ink} bold>
+                Nyt rum
+              </Text>,
+              <Input key="new-room" placeholder="Fx Projekt Nord" submitLabel="Opret →" autoFocus onSubmit={value => void createRoom($, value)} />,
+            ])
+          : null
 
-    // Messages: grouped per person within five minutes, a divider per day.
+    // Messages: grouped per person within five minutes, a pill per day, the
+    // time of a follow-up revealed while the pointer is on it.
     const rows: RenderElement[] = []
     c.messages.forEach((m, i) => {
       const prev = c.messages[i - 1]
       const day = dayLabel(m.created_at, now)
-      if (!prev || dayLabel(prev.created_at, now) !== day) {
+      const isNewDay = !prev || dayLabel(prev.created_at, now) !== day
+      if (isNewDay) {
         rows.push(
-          <Box key={`day-${m.id}`} justifyContent="center" marginTop={1}>
-            <Text dimColor>{`— ${day} —`}</Text>
+          <Box key={`day-${m.id}`} justifyContent="center" marginTop={1} marginBottom={1}>
+            <Box borderStyle="round" borderColor={cloud} backgroundColor={cloud} paddingX={2}>
+              <Text color={softInk}>{day}</Text>
+            </Box>
           </Box>,
         )
       }
       const isMine = m.sender_email.toLowerCase() === me
       const isNewGroup =
-        !prev ||
-        prev.sender_email !== m.sender_email ||
-        Date.parse(m.created_at) - Date.parse(prev.created_at) > 5 * 60_000 ||
-        dayLabel(prev.created_at, now) !== day
-      const isShare = m.kind === 'share'
+        isNewDay || !prev || prev.sender_email !== m.sender_email || Date.parse(m.created_at) - Date.parse(prev.created_at) > 5 * 60_000
 
-      const bubble = isShare ? (
-        <Box flexDirection="column" borderStyle="round" borderColor={lagoon} paddingX={1}>
-          <Text color={lagoon} bold>
-            ✨ Delt fra Claude
-          </Text>
-          <Text wrap="wrap">{m.body}</Text>
-        </Box>
-      ) : isMine ? (
-        <Box borderStyle="round" borderColor={accent} backgroundColor={accent} paddingX={1}>
-          <Text color="#FFFFFF" wrap="wrap">
-            {m.body}
-          </Text>
-        </Box>
-      ) : (
-        <Box borderStyle="round" borderColor="inactive" paddingX={1}>
-          <Text wrap="wrap">{m.body}</Text>
+      const bubble =
+        m.kind === 'share' ? (
+          <Box flexDirection="column" borderStyle="round" borderColor={lagoon} backgroundColor={mint} paddingX={2} paddingY={1}>
+            <Text color={lagoon} bold>
+              ✨ Delt fra Claude
+            </Text>
+            <Text color={ink} wrap="wrap">
+              {m.body}
+            </Text>
+          </Box>
+        ) : isMine ? (
+          <Box borderStyle="round" borderColor={accent} backgroundColor={accent} paddingX={2}>
+            <Text color="#FFFFFF" wrap="wrap">
+              {m.body}
+            </Text>
+          </Box>
+        ) : (
+          <Box borderStyle="round" borderColor={cloud} backgroundColor={cloud} paddingX={2}>
+            <Text color={ink} wrap="wrap">
+              {m.body}
+            </Text>
+          </Box>
+        )
+
+      const hoverTime = (
+        <Box display="none" hover={{ display: 'flex' }} alignSelf="center">
+          <Text dimColor>{clock(m.created_at)}</Text>
         </Box>
       )
 
       rows.push(
         isMine ? (
           <Box key={`m-${m.id}`} flexDirection="column" alignItems="flex-end" marginTop={isNewGroup ? 1 : 0}>
-            {isNewGroup && <Text dimColor>{clock(m.created_at)}</Text>}
-            {bubble}
+            {isNewGroup && <Text dimColor>{`Dig · ${clock(m.created_at)}`}</Text>}
+            <Box flexDirection="row" gap={1} alignItems="center">
+              {isNewGroup ? null : hoverTime}
+              {bubble}
+            </Box>
           </Box>
         ) : (
           <Box key={`m-${m.id}`} flexDirection="row" gap={1} marginTop={isNewGroup ? 1 : 0}>
             <Box width={4} flexShrink={0}>
-              {isNewGroup ? avatar(m.sender_name, m.sender_email) : null}
+              {isNewGroup ? avatar(m.sender_name, m.sender_email, 30) : null}
             </Box>
             <Box flexDirection="column" flexShrink={1} alignItems="flex-start">
               {isNewGroup && (
@@ -607,113 +756,111 @@ export const register: Register = on => {
                   <Text dimColor>{clock(m.created_at)}</Text>
                 </Box>
               )}
-              {bubble}
+              <Box flexDirection="row" gap={1} alignItems="center">
+                {bubble}
+                {isNewGroup ? null : hoverTime}
+              </Box>
             </Box>
           </Box>
         ),
       )
     })
 
-    const others = c.members.filter(m => m.toLowerCase() !== me)
-
-    const header = (
-      <Box flexDirection="column" gap={1}>
-        <Box flexDirection="row" alignItems="center" gap={1}>
-          <Box flexDirection="column" flexGrow={1}>
-            <Text color={accent} bold>
-              {room ? `# ${room.name}` : '💬 Team Chat'}
-            </Text>
-            <Text dimColor>
-              {room ? `${c.members.length} ${c.members.length === 1 ? 'medlem' : 'medlemmer'}` : 'Ingen rum endnu'}
-            </Text>
-          </Box>
-          {room && Svg && c.members.length > 0 && (
-            <Svg source={stackSvg(c.members)} alt={c.members.map(nameFrom).join(', ')} width={stackWidth(c.members.length)} height={26} />
-          )}
-          {room && (
-            <Box borderStyle="round" borderColor={v.mode === 'invite' ? accent : 'inactive'} paddingX={1}>
-              <Button key="invite-toggle" label="＋ Inviter" plain onPress={toggle('invite')} />
-            </Box>
-          )}
-        </Box>
-
-        <Box flexDirection="row" gap={1} flexWrap="wrap">
-          {c.rooms.map(r => {
-            const isActive = r.id === c.roomId
-
-            return (
-              <Box
-                key={`pill-${r.id}`}
-                borderStyle="round"
-                borderColor={isActive ? accent : 'inactive'}
-                backgroundColor={isActive ? accent : undefined}
-                paddingX={1}
-                hover={isActive ? undefined : { borderColor: accent }}
-              >
-                <Button key={`room-${r.id}`} label={r.name} plain onPress={() => openRoom($, r.id)} />
-              </Box>
-            )
-          })}
-          <Box key="pill-new" borderStyle="round" borderColor="inactive" borderDimColor paddingX={1} hover={{ borderColor: accent }}>
-            <Button key="new-room-toggle" label="＋ Nyt rum" plain dimColor onPress={toggle('new-room')} />
-          </Box>
-        </Box>
+    const pill = (key: string, label: string, isActive: boolean, onPress: () => unknown) => (
+      <Box
+        key={key}
+        borderStyle="round"
+        borderColor={isActive ? accent : cloud}
+        backgroundColor={isActive ? accent : cloud}
+        paddingX={2}
+        hover={isActive ? undefined : { borderColor: accent }}
+      >
+        <Button key={`${key}-btn`} label={label} plain onPress={onPress} />
       </Box>
     )
 
-    const body = !room ? (
-      <Box flexDirection="column" alignItems="center" borderStyle="round" borderColor="inactive" paddingX={2} paddingY={1} gap={1}>
-        <Text>🏝️</Text>
-        <Text bold>Du er ikke med i et rum endnu</Text>
-        <Text dimColor wrap="wrap">
-          Opret et med "＋ Nyt rum", eller bed en kollega invitere dig.
-        </Text>
+    const banner = room ? (
+      Svg ? (
+        <Svg
+          source={roomBannerSvg(room.name, c.members, `${c.members.length} ${c.members.length === 1 ? 'medlem' : 'medlemmer'} · ${c.messages.length} beskeder`)}
+          alt={`${room.name}, ${c.members.map(nameFrom).join(', ')}`}
+        />
+      ) : (
+        <Box flexDirection="column">
+          <Text color={accent} bold>{`# ${room.name}`}</Text>
+          <Text dimColor>{c.members.map(nameFrom).join(' · ')}</Text>
+        </Box>
+      )
+    ) : (
+      hero('Team Chat', 'Opret et rum, eller bed en kollega invitere dig.')
+    )
+
+    const toolbar = (
+      <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
+        {c.rooms.map(r => pill(`pill-${r.id}`, r.name, r.id === c.roomId, () => openRoom($, r.id)))}
+        {pill('pill-new', '＋ Nyt rum', v.mode === 'new-room', toggle('new-room'))}
+        <Box flexGrow={1} />
+        {room && pill('pill-invite', '＋ Inviter', v.mode === 'invite', toggle('invite'))}
       </Box>
-    ) : rows.length === 0 ? (
-      <Box flexDirection="column" alignItems="center" paddingY={2} gap={1}>
-        <Text>👋</Text>
-        <Text bold>{`Velkommen til ${room.name}`}</Text>
-        <Text dimColor wrap="wrap">
-          {others.length > 0 ? `Sig hej til ${others.map(nameFrom).join(' og ')}.` : 'Inviter en kollega, og sig hej.'}
-        </Text>
-      </Box>
+    )
+
+    const messages = !room ? null : rows.length === 0 ? (
+      Svg ? (
+        <Svg
+          source={emptySvg(`Velkommen til ${clip(room.name, 30)}`, others.length > 0 ? `Sig hej til ${others.map(nameFrom).join(' og ')}` : 'Inviter en kollega, og sig hej')}
+          alt="Ingen beskeder endnu"
+        />
+      ) : (
+        <Text dimColor>{`Ingen beskeder i ${room.name} endnu. Sig hej 👋`}</Text>
+      )
     ) : (
       <Box flexDirection="column">{rows}</Box>
     )
 
-    return (
-      <Box flexDirection="column" paddingX={1} paddingY={1} gap={1}>
-        {header}
-        {modeCard}
-        {body}
-        {error}
-        {room && (
-          <Box flexDirection="column" borderStyle="round" borderColor={accent} paddingX={1}>
-            <Input
-              key="compose"
-              placeholder={`Skriv til ${room.name}…`}
-              submitLabel="send"
-              value={text}
-              autoFocus
-              onInput={value => void update($, draft, () => value)}
-              onSubmit={value => {
-                void update($, draft, () => '')
-                void send($, value)
-              }}
-            />
-          </Box>
-        )}
-        <Box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap">
-          {room && reply && (
-            <Box key="share-pill" borderStyle="round" borderColor={lagoon} paddingX={1} hover={{ backgroundColor: lagoon }}>
+    const composer = room ? (
+      <Box key="composer" flexDirection="column" borderStyle="round" borderColor={skyLine} backgroundColor={sky} paddingX={2} paddingY={1} gap={1}>
+        <Input
+          key="compose"
+          placeholder={`Skriv til # ${room.name}…`}
+          submitLabel="Send ➤"
+          value={text}
+          autoFocus
+          onInput={value => void update($, draft, () => value)}
+          onSubmit={value => {
+            void update($, draft, () => '')
+            void send($, value)
+          }}
+        />
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          {reply && (
+            <Box key="share-pill" borderStyle="round" borderColor={lagoon} backgroundColor={mint} paddingX={1} hover={{ borderColor: accent }}>
               <Button key="share-reply" label="✨ Del Claudes seneste svar" plain onPress={() => send($, reply, 'share')} />
             </Box>
           )}
           <Box flexGrow={1} />
           {avatar(c.name ?? '?', c.me ?? '', 20)}
-          <Text dimColor>{c.name ?? ''}</Text>
+          <Text color={softInk}>{c.name ?? ''}</Text>
           <Button key="sign-out" label="Log ud" plain dimColor onPress={() => signOut($)} />
         </Box>
+      </Box>
+    ) : (
+      <Box flexDirection="row" justifyContent="flex-end" gap={1}>
+        {avatar(c.name ?? '?', c.me ?? '', 20)}
+        <Text dimColor>{c.name ?? ''}</Text>
+        <Button key="sign-out" label="Log ud" plain dimColor onPress={() => signOut($)} />
+      </Box>
+    )
+
+    return (
+      <Box flexDirection="column" paddingX={1} paddingY={1} gap={1} minHeight={fill}>
+        {banner}
+        {toolbar}
+        {modeCard}
+        <Box flexDirection="column" flexGrow={1} justifyContent="flex-end">
+          {messages}
+        </Box>
+        {error}
+        {composer}
       </Box>
     )
   })

@@ -7,7 +7,7 @@ Chat med dine kolleger i et panel lige ved siden af Claude: rum, invitationer og
 Åbn en terminal, start `claude`, og skriv:
 
 ```
-/plugin install team-chat --marketplace GITHUB-BRUGER/team-chat
+/plugin install team-chat --marketplace Stokn9x/Claude_Chat
 ```
 
 Svar `y` til at tilføje marketplacen, og vælg **user**-scope med Enter. Herefter er chatten med i alle dine Claude-sessioner, også i Claude desktop-appens Code-fane.
