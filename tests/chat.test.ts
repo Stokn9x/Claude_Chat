@@ -1,179 +1,198 @@
+import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
 const props = { title: '💬 Chat', isFocused: true, bodyColumns: 60 } as never
 
 const json = (status: number, body: unknown) => ({
-  value: { status, ok: status < 300, headers: {}, text: JSON.stringify(body) },
+  value: { status, ok: status < 300, headers: {}, text: body === undefined ? '' : JSON.stringify(body) },
 })
 
+type Msg = { id: number; sender_id: string; sender_name: string; body: string; kind: string; created_at: string }
+
+// A small Supabase: one anonymous user per signup, rooms with codes, members, messages.
+const fakeSupabase = (seed: { rooms?: { id: string; name: string; code: string; members: { user_id: string; name: string }[] }[]; messages?: Msg[] } = {}) => {
+  const rooms = seed.rooms ?? []
+  const messages: Msg[] = seed.messages ?? []
+  const calls: { path: string; body: unknown }[] = []
+  let users = 0
+  const me = () => `user-${users}`
+  const myName = { value: '' }
+
+  const handle = (url: string, init?: { method?: string; body?: string }) => {
+    const path = url.replace('https://yqdumafjvdyabojuajeo.supabase.co', '')
+    const body = init?.body ? (JSON.parse(init.body) as Record<string, string>) : {}
+    calls.push({ path, body })
+
+    if (path === '/auth/v1/signup') {
+      users += 1
+      return json(200, { access_token: `jwt-${users}`, refresh_token: 'r', expires_in: 3600, user: { id: me() } })
+    }
+    if (path === '/rest/v1/rpc/my_rooms') {
+      return json(
+        200,
+        rooms
+          .filter(r => r.members.some(m => m.user_id === me()))
+          .map(r => ({ id: r.id, name: r.name, invite_code: r.code, members: r.members, unread: 0, last_id: null })),
+      )
+    }
+    if (path === '/rest/v1/rpc/create_room') {
+      const room = { id: `room-${rooms.length + 1}`, name: body.room_name ?? '', code: 'NEW1-CODE', members: [{ user_id: me(), name: body.my_name ?? '' }] }
+      rooms.push(room)
+      return json(200, { id: room.id, name: room.name, invite_code: room.code })
+    }
+    if (path === '/rest/v1/rpc/join_room') {
+      const room = rooms.find(r => r.code === body.code)
+      if (!room) return json(400, { code: 'P0002', message: 'unknown_code' })
+      if (room.members.some(m => m.name.toLowerCase() === (body.my_name ?? '').toLowerCase())) {
+        return json(409, { code: '23505', message: 'name_taken' })
+      }
+      room.members.push({ user_id: me(), name: body.my_name ?? '' })
+      return json(200, { id: room.id, name: room.name, invite_code: room.code })
+    }
+    if (path === '/rest/v1/rpc/set_my_name') {
+      myName.value = body.my_name ?? ''
+      return json(204, undefined)
+    }
+    if (path.startsWith('/rest/v1/rpc/')) return json(204, undefined)
+    if (path.startsWith('/rest/v1/messages') && init?.method === 'POST') {
+      const room = rooms.find(r => r.id === body.room_id)
+      const msg = {
+        id: messages.length + 1,
+        sender_id: me(),
+        sender_name: room?.members.find(m => m.user_id === me())?.name ?? '?',
+        body: body.body ?? '',
+        kind: body.kind ?? 'text',
+        created_at: '2026-10-15T10:05:00Z',
+      }
+      messages.push(msg)
+      return json(201, [msg])
+    }
+    if (path.startsWith('/rest/v1/messages')) {
+      const roomId = /room_id=eq\.([^&]+)/.exec(path)?.[1]
+      const after = Number(/id=gt\.(\d+)/.exec(path)?.[1] ?? 0)
+      return json(200, messages.filter(m => (m as Msg & { room?: string }).room === roomId || roomId === 'room-1').filter(m => m.id > after).reverse())
+    }
+
+    return json(404, { message: `not mocked: ${path}` })
+  }
+
+  return { handle, calls, rooms, messages }
+}
+
+const engine = (on: On, api: ReturnType<typeof fakeSupabase>) => {
+  const store = new Map<string, unknown>()
+  const copied: string[] = []
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } } as never
+  })
+  on('clock.now', () => ({ value: Date.UTC(2026, 9, 15, 10, 10) }))
+  on('store.get', (_, e) => ({ value: store.get(e.key) }))
+  on('store.set', (_, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('store.delete', (_, e) => {
+    store.delete(e.key)
+    return { value: undefined }
+  })
+  on('http.fetch', (_, e) => api.handle(e.url, e.init))
+
+  return { store, copied }
+}
+
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`${surface}: sign in with a code, read the room and send a message`, async ($, on) => {
-    const store = new Map<string, unknown>()
-    const sent: unknown[] = []
-
-    on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
-    on('clock.now', () => ({ value: Date.UTC(2026, 9, 15, 10) }))
-    on('store.get', (_, e) => ({ value: store.get(e.key) }))
-    on('store.set', (_, e) => {
-      store.set(e.key, e.value)
-      return { value: undefined }
+  test(`${surface}: pick a name, join with a code and chat`, async ($, on) => {
+    const api = fakeSupabase({
+      rooms: [{ id: 'room-1', name: 'Hygge', code: 'HAV7-K2PQ', members: [{ user_id: 'cej', name: 'Cej' }] }],
+      messages: [{ id: 1, sender_id: 'cej', sender_name: 'Cej', body: 'Velkommen!', kind: 'text', created_at: '2026-10-15T10:00:00Z' }],
     })
-    on('store.delete', (_, e) => {
-      store.delete(e.key)
-      return { value: undefined }
-    })
-    on('http.fetch', (_, e) => {
-      const url = e.url
-      const method = e.init?.method ?? 'GET'
-
-      if (url.endsWith('/auth/v1/otp')) return json(200, {})
-      if (url.endsWith('/auth/v1/verify')) {
-        return json(200, {
-          access_token: 'jwt',
-          refresh_token: 'refresh',
-          expires_in: 3600,
-          user: { email: 'amalie@firma.dk' },
-        })
-      }
-      if (url.includes('/rest/v1/rooms')) return json(200, [{ id: 'r1', name: 'Amalie & Cecilie' }])
-      if (url.includes('/rest/v1/room_members')) {
-        return json(200, [{ email: 'amalie@firma.dk' }, { email: 'cecilie@firma.dk' }])
-      }
-      if (url.includes('/rest/v1/messages') && method === 'POST') {
-        const body = JSON.parse(e.init?.body ?? '{}') as { body: string; sender_name: string }
-        sent.push(body)
-        return json(201, [
-          {
-            id: 2,
-            sender_email: 'amalie@firma.dk',
-            sender_name: body.sender_name,
-            body: body.body,
-            kind: 'text',
-            created_at: '2026-10-15T10:01:00Z',
-          },
-        ])
-      }
-      if (url.includes('/rest/v1/messages')) {
-        return json(200, [
-          {
-            id: 1,
-            sender_email: 'cecilie@firma.dk',
-            sender_name: 'Cecilie',
-            body: 'Hej Amalie!',
-            kind: 'text',
-            created_at: '2026-10-15T10:00:00Z',
-          },
-        ])
-      }
-
-      return json(404, { message: 'not mocked' })
-    })
+    const { store } = engine(on, api)
 
     const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
+    await ui.input({ key: 'my-name', text: '  Bertram  ' })
+    expect(store.get('name')).toBe('Bertram')
+    expect(store.get('session')).toMatchObject({ user_id: 'user-1' })
+    expect(await ui.find({ key: 'join-code' })).toBeDefined()
 
-    await ui.input({ key: 'email', text: 'Amalie@Firma.dk' })
-    expect(await ui.find({ key: 'code' })).toBeDefined()
+    await ui.input({ key: 'join-code', text: 'hav7 k2pq' })
+    expect(api.calls.find(c => c.path === '/rest/v1/rpc/join_room')?.body).toEqual({ code: 'HAV7-K2PQ', my_name: 'Bertram' })
+    expect(await ui.find({ text: /Velkommen!/ })).toBeDefined()
 
-    await ui.input({ key: 'code', text: '123 456' })
-    expect(await ui.find({ text: /Hej Amalie!/ })).toBeDefined()
-    expect(await ui.find({ key: 'pill-r1-btn' })).toBeDefined()
-    expect(store.get('session')).toMatchObject({ email: 'amalie@firma.dk' })
-
-    await ui.input({ key: 'compose', text: 'Hvad så?' })
-    expect(sent).toEqual([{ room_id: 'r1', sender_name: 'Amalie', body: 'Hvad så?', kind: 'text' }])
-    expect(await ui.find({ text: /Hvad så\?/ })).toBeDefined()
+    await ui.input({ key: 'compose', text: 'Hej Cej' })
+    expect(api.messages.at(-1)).toMatchObject({ body: 'Hej Cej', sender_name: 'Bertram', sender_id: 'user-1' })
+    expect(await ui.find({ text: /Hej Cej/ })).toBeDefined()
   })
 
-  test(`${surface}: a copied mail link signs in, even wrapped by Outlook Safe Links`, async ($, on) => {
-    const verified: unknown[] = []
-    const store = new Map<string, unknown>()
-
-    on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
-    on('clock.now', () => ({ value: Date.UTC(2026, 9, 15, 10) }))
-    on('store.get', (_, e) => ({ value: store.get(e.key) }))
-    on('store.set', (_, e) => {
-      store.set(e.key, e.value)
-      return { value: undefined }
-    })
-    on('http.fetch', (_, e) => {
-      if (e.url.endsWith('/auth/v1/otp')) return json(200, {})
-      if (e.url.endsWith('/auth/v1/verify')) {
-        verified.push(JSON.parse(e.init?.body ?? '{}'))
-        return json(200, { access_token: 'jwt', refresh_token: 'r', expires_in: 3600, user: { email: 'cej@firma.dk' } })
-      }
-      return json(200, [])
-    })
+  test(`${surface}: an e-mail session from 0.2 is dropped for a fresh anonymous one`, async ($, on) => {
+    const api = fakeSupabase()
+    const { store } = engine(on, api)
+    store.set('session', { access_token: 'old', refresh_token: 'r', expires_at: Date.UTC(2030, 0, 1), email: 'cej@firma.dk' })
 
     const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
-    await ui.input({ key: 'email', text: 'cej@firma.dk' })
+    await ui.input({ key: 'my-name', text: 'Cej' })
 
-    await ui.input({ key: 'code', text: 'https://evil.example/auth/v1/verify?token=x&type=signup' })
-    expect(await ui.find({ text: /kommer ikke fra chat-login-mailen/ })).toBeDefined()
-    expect(verified).toEqual([])
-
-    const link = 'https://yqdumafjvdyabojuajeo.supabase.co/auth/v1/verify?token=pkce_abc123&type=signup&redirect_to=http://localhost:3000'
-    const safe = `https://eur01.safelinks.protection.outlook.com/?url=${encodeURIComponent(link)}&data=05%7C02`
-    await ui.input({ key: 'code', text: safe })
-
-    expect(verified).toEqual([{ token_hash: 'pkce_abc123', type: 'signup' }])
-    expect(await ui.find({ key: 'pill-new-btn' })).toBeDefined()
+    expect(api.calls.some(c => c.path === '/auth/v1/signup')).toBe(true)
+    expect(store.get('session')).toMatchObject({ user_id: 'user-1' })
   })
 
-  test(`${surface}: Supabase's mail limit reads as plain Danish`, async ($, on) => {
-    on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
-    on('http.fetch', () => json(429, { code: 429, error_code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' }))
+  test(`${surface}: create a room and copy its invitation`, async ($, on) => {
+    const api = fakeSupabase()
+    const { copied } = engine(on, api)
 
     const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
-    await ui.input({ key: 'email', text: 'bip@firma.dk' })
+    await ui.input({ key: 'my-name', text: 'Amalie' })
+    await ui.input({ key: 'new-room', text: '#Projekt Nord' })
 
-    expect(await ui.find({ text: /for mange login-mails/ })).toBeDefined()
-    expect(await ui.find({ key: 'email' })).toBeDefined()
+    expect(api.calls.find(c => c.path === '/rest/v1/rpc/create_room')?.body).toEqual({ room_name: 'Projekt Nord', my_name: 'Amalie' })
+    expect(await ui.find({ text: /NEW1-CODE/ })).toBeDefined()
+
+    await ui.press({ key: 'copy-invite-btn' })
+    expect(copied[0]).toContain('NEW1-CODE')
+    expect(copied[0]).toContain('github.com/Stokn9x/Claude_Chat')
   })
 
-  test(`${surface}: an invitation key signs in without any mail`, async ($, on) => {
-    const logins: unknown[] = []
-    const store = new Map<string, unknown>()
-
-    on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
-    on('ui.status', () => ({ value: undefined }))
-    on('clock.now', () => ({ value: Date.UTC(2026, 9, 15, 10) }))
-    on('store.get', (_, e) => ({ value: store.get(e.key) }))
-    on('store.set', (_, e) => {
-      store.set(e.key, e.value)
-      return { value: undefined }
+  test(`${surface}: a taken name and an unknown code read as plain Danish`, async ($, on) => {
+    const api = fakeSupabase({
+      rooms: [{ id: 'room-1', name: 'Hygge', code: 'HAV7-K2PQ', members: [{ user_id: 'cej', name: 'Amalie' }] }],
     })
-    on('http.fetch', (_, e) => {
-      if (e.url.endsWith('/auth/v1/token?grant_type=password')) {
-        logins.push(JSON.parse(e.init?.body ?? '{}'))
-        return json(200, { access_token: 'jwt', refresh_token: 'r', expires_in: 3600, user: { email: 'bip@firma.dk' } })
-      }
-      return json(200, [])
-    })
+    engine(on, api)
 
     const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
+    await ui.input({ key: 'my-name', text: 'amalie' })
 
-    await ui.input({ key: 'invite-key', text: 'ikke en nøgle' })
-    expect(await ui.find({ text: /ligner ikke en invitationsnøgle/ })).toBeDefined()
-    expect(logins).toEqual([])
+    await ui.input({ key: 'join-code', text: 'nope' })
+    expect(await ui.find({ text: /ABCD-EF23/ })).toBeDefined()
+    expect(api.calls.some(c => c.path === '/rest/v1/rpc/join_room')).toBe(false)
 
-    await ui.input({ key: 'invite-key', text: '  tc1:BIP@firma.dk:abcdefghijklmnopqrstuvwxyz0123  ' })
-    expect(logins).toEqual([{ email: 'bip@firma.dk', password: 'abcdefghijklmnopqrstuvwxyz0123' }])
-    expect(store.get('session')).toMatchObject({ email: 'bip@firma.dk' })
-    expect(await ui.find({ key: 'pill-new-btn' })).toBeDefined()
+    await ui.input({ key: 'join-code', text: 'ZZZZ-ZZZZ' })
+    expect(await ui.find({ text: /intet rum med koden ZZZZ-ZZZZ/ })).toBeDefined()
+
+    await ui.input({ key: 'join-code', text: 'HAV7-K2PQ' })
+    expect(await ui.find({ text: /allerede en "amalie"/ })).toBeDefined()
   })
 
-  test(`${surface}: a wrong email never reaches the server`, async ($, on) => {
-    let calls = 0
-    on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
-    on('http.fetch', () => {
-      calls += 1
-      return json(200, {})
+  test(`${surface}: a long shared Claude reply folds and unfolds`, async ($, on) => {
+    const long = ['Her er planen:', '', '```powershell', ...Array.from({ length: 30 }, (_, i) => `Write-Host ${i}`), '```', '', 'SLUTNINGEN'].join('\n')
+    const api = fakeSupabase({
+      rooms: [{ id: 'room-1', name: 'Hygge', code: 'HAV7-K2PQ', members: [{ user_id: 'cej', name: 'Cej' }] }],
+      messages: [{ id: 1, sender_id: 'cej', sender_name: 'Cej', body: long, kind: 'share', created_at: '2026-10-15T10:00:00Z' }],
     })
+    engine(on, api)
 
     const ui = await $.ui.mount({ plugin: 'team-chat', surface, component: 'Pane', requestId: 'team-chat', props })
-    await ui.input({ key: 'email', text: 'ikke en mail' })
+    await ui.input({ key: 'my-name', text: 'Bip' })
+    await ui.input({ key: 'join-code', text: 'HAV7-K2PQ' })
 
-    expect(await ui.find({ text: /ligner ikke en e-mail/ })).toBeDefined()
-    expect(calls).toBe(0)
+    const folded = JSON.stringify(await ui.drawn())
+    expect(folded).toContain('Cej delte et svar fra Claude')
+    expect(folded).not.toContain('SLUTNINGEN')
+    expect(folded).toContain('Vis mere')
+
+    await ui.press({ key: 'fold-1' })
+    expect(JSON.stringify(await ui.drawn())).toContain('SLUTNINGEN')
   })
 }

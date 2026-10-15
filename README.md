@@ -1,6 +1,6 @@
 # Team Chat
 
-Chat med dine kolleger i et panel lige ved siden af Claude: rum, invitationer og deling af Claudes svar med ét klik.
+Chat med dine kolleger i et panel lige ved siden af Claude. Intet login: vælg et navn, og deltag i rum med en invitationskode. Del Claudes svar med ét klik.
 
 ## Installér
 
@@ -29,33 +29,40 @@ Svar `y` til at tilføje marketplacen, og vælg **user**-scope med Enter.
 
 ### Opdatér
 
-```
-claude plugin marketplace update team-chat
+Kør i PowerShell (virker i et nyt vindue), og start en ny session bagefter:
+
+```powershell
+$roots = @("$env:APPDATA\Claude\claude-code") + (Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory -Filter "*Claude*" -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FullName)\LocalCache\Roaming\Claude\claude-code" })
+$claude = $roots | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Recurse -Filter claude.exe } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+if (-not $claude) { $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source }
+if ($claude) { & $claude plugin marketplace update team-chat; & $claude plugin update team-chat@team-chat; & $claude plugin list } else { "Fandt ingen claude.exe" }
 ```
 
 ## Kom i gang
 
 1. Panelet **💬 Chat** åbner af sig selv (ellers skriv `/chat`).
-2. Log ind på én af to måder:
-   - **Invitationsnøgle:** har du fået en nøgle (`tc1:…`), så indsæt den i *Har du fået en invitationsnøgle?* og tryk Enter.
-   - **E-mail:** skriv din e-mail og tryk Enter. Du får en mail fra Supabase. **Klik ikke på linket.** Højreklik på det, vælg *Kopiér link*, og indsæt det i panelet.
-3. Opret et rum med **＋ Nyt rum**, eller bed en kollega invitere dig.
+2. Skriv det navn, dine kolleger skal se.
+3. **Opret et rum**, og send koden (fx `HAV7-K2PQ`) til dine kolleger med **🔗 Inviter → Kopiér invitation**, eller **deltag** i et rum med en kode, du har fået.
 
 ## Kommandoer
 
 | Kommando | Gør |
 | --- | --- |
 | `/chat` | Åbner chatpanelet |
-| `/chat tc1:…` | Logger ind med en invitationsnøgle |
 | `/chat hej med jer` | Sender en besked til det aktive rum |
-| `/chat inviter navn@firma.dk` | Inviterer en kollega til rummet |
+| `/chat HAV7-K2PQ` eller `/chat deltag HAV7-K2PQ` | Deltager i et rum |
 | `/chat rum Projekt X` | Opretter et nyt rum |
-| `/chat navn Amalie` | Ændrer dit visningsnavn |
-| `/chat log ud` | Logger ud |
+| `/chat kode` | Viser det aktive rums kode |
+| `/chat navn Amalie` | Skifter dit navn i alle dine rum |
+| `/chat forlad` | Forlader det aktive rum |
 
 ## Sikkerhed
 
-- Beskeder ligger i Supabase, og kun medlemmer af et rum kan læse og skrive i det (Row Level Security).
-- Man kan kun skrive som sig selv; afsenderen tages fra login'et.
-- En invitationsnøgle er personlig og virker som en adgangskode: send den privat, og bed om en ny, hvis den er blevet delt.
+- Hver computer får en anonym konto i Supabase. Kun medlemmer af et rum kan læse og skrive i det (Row Level Security), og man bliver kun medlem med rummets kode.
+- Afsender og navn sættes af serveren, så ingen kan skrive i en andens navn, og hvert navn findes kun én gang pr. rum.
+- Koden er nøglen til rummet: del den kun med dem, der skal være med.
 - Intet fra chatten sendes videre til Claude.
+
+## Backend
+
+Databasen (tabeller, funktioner og regler) ligger i [`supabase/schema.sql`](supabase/schema.sql). Projektet skal have *Allow anonymous sign-ins* slået til.
