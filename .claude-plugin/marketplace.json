@@ -1,0 +1,5 @@
+{
+  "name": "team-chat",
+  "owner": { "name": "Casper", "email": "cej@copenhagendata.com" },
+  "plugins": [{ "name": "team-chat", "source": "./" }]
+}
