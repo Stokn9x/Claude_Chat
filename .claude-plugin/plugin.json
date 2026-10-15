@@ -1,6 +1,6 @@
 {
   "name": "team-chat",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Chat med kolleger i et panel ved siden af Claude: rum med invitationskoder, intet login",
   "author": { "name": "Casper", "email": "cej@copenhagendata.com" },
   "types": "./types/index.d.ts"

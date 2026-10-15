@@ -40,8 +40,8 @@ export type Chat = {
 declare module 'claude-code' {
   interface PluginState {
     'team-chat': {
-      view: View
-      chat: Chat
+      screen: View
+      talk: Chat
       draft: string
       lastReply: string | null
       expanded: number[]

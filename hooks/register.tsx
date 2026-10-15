@@ -17,11 +17,11 @@ const FOLD_CHARS = 700
 const FOLD_LINES = 14
 
 const view = atom(
-  { plugin: 'team-chat', key: 'view' } as const,
+  { plugin: 'team-chat', key: 'screen' } as const,
   { phase: 'setup', error: null, isBusy: false, mode: 'none' } as View,
 )
 const chat = atom(
-  { plugin: 'team-chat', key: 'chat' } as const,
+  { plugin: 'team-chat', key: 'talk' } as const,
   { me: null, name: null, rooms: [], roomId: null, messages: [] } as Chat,
 )
 const draft = atom({ plugin: 'team-chat', key: 'draft' } as const, '')
@@ -342,6 +342,14 @@ const leaveRoom = async ($: $) => {
   await openRoom($, (await read($, chat)).roomId)
 }
 
+// Back to a clean drawing from what the server and the store hold.
+const resetPane = async ($: $) => {
+  await update($, view, (): View => ({ phase: 'setup', error: null, isBusy: false, mode: 'none' }))
+  await update($, chat, (): Chat => ({ me: null, name: null, rooms: [], roomId: null, messages: [] }))
+  await update($, expanded, () => [])
+  await enterChat($)
+}
+
 // ─── Look ───────────────────────────────────────────────────────────────
 
 // Mid-tone accents read on a light pane and a dark one alike; cards and
@@ -542,351 +550,368 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    if (e.surface === 'mobile') {
-      const { Text } = $.ui.resolve(e)
+    try {
+      if (e.surface === 'mobile') {
+        const { Text } = $.ui.resolve(e)
 
-      return <Text wrap="wrap">💬 Chatten bruger skrivefelter, som mobil-appen ikke har endnu. Skriv /chat besked for at sende.</Text>
-    }
+        return <Text wrap="wrap">💬 Chatten bruger skrivefelter, som mobil-appen ikke har endnu. Skriv /chat besked for at sende.</Text>
+      }
 
-    const kit = $.ui.resolve(e)
-    const { Box, Button, Input, Markdown, Text } = kit
-    const Svg = 'Svg' in kit ? kit.Svg : null
-    const v = await read($, view)
-    const c = await read($, chat)
-    const fill = e.viewport?.rows ? Math.max(10, e.viewport.rows - 3) : undefined
+      const kit = $.ui.resolve(e)
+      const { Box, Button, Input, Markdown, Text } = kit
+      const Svg = 'Svg' in kit ? kit.Svg : null
+      const v = await read($, view)
+      const c = await read($, chat)
+      const fill = e.viewport?.rows ? Math.max(10, e.viewport.rows - 3) : undefined
 
-    const avatar = (name: string, id: string, size = 28) =>
-      Svg ? (
-        <Svg source={avatarSvg(name, id, size)} alt={name} width={size} height={size} />
-      ) : (
-        <Text color={colorFor(id)} bold>
-          {initial(name)}
+      const avatar = (name: string, id: string, size = 28) =>
+        Svg ? (
+          <Svg source={avatarSvg(name, id, size)} alt={name} width={size} height={size} />
+        ) : (
+          <Text color={colorFor(id)} bold>
+            {initial(name)}
+          </Text>
+        )
+
+      const card = (key: string, children: RenderElement | RenderElement[], tint: 'sky' | 'error' = 'sky') => (
+        <Box
+          key={key}
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={tint === 'error' ? '#F2B8B5' : skyLine}
+          backgroundColor={tint === 'error' ? '#FDECEA' : sky}
+          paddingX={2}
+          paddingY={1}
+          gap={1}
+        >
+          {children}
+        </Box>
+      )
+
+      const title = (key: string, text: string) => (
+        <Text key={key} color={ink} bold>
+          {text}
+        </Text>
+      )
+      const hint = (key: string, text: string) => (
+        <Text key={key} color={softInk} wrap="wrap">
+          {text}
         </Text>
       )
 
-    const card = (key: string, children: RenderElement | RenderElement[], tint: 'sky' | 'error' = 'sky') => (
-      <Box
-        key={key}
-        flexDirection="column"
-        borderStyle="round"
-        borderColor={tint === 'error' ? '#F2B8B5' : skyLine}
-        backgroundColor={tint === 'error' ? '#FDECEA' : sky}
-        paddingX={2}
-        paddingY={1}
-        gap={1}
-      >
-        {children}
-      </Box>
-    )
+      const error = v.error
+        ? card(
+            'error',
+            <Text color="#B3261E" wrap="wrap">
+              {`⚠ ${v.error}`}
+            </Text>,
+            'error',
+          )
+        : null
 
-    const title = (key: string, text: string) => (
-      <Text key={key} color={ink} bold>
-        {text}
-      </Text>
-    )
-    const hint = (key: string, text: string) => (
-      <Text key={key} color={softInk} wrap="wrap">
-        {text}
-      </Text>
-    )
-
-    const error = v.error
-      ? card(
-          'error',
-          <Text color="#B3261E" wrap="wrap">
-            {`⚠ ${v.error}`}
-          </Text>,
-          'error',
+      const hero = (head: string, sub: string) =>
+        Svg ? (
+          <Svg source={welcomeSvg(head, sub)} alt={`${head}. ${sub}`} />
+        ) : (
+          <Box flexDirection="column">
+            <Text color={accent} bold>
+              {`💬 ${head}`}
+            </Text>
+            <Text dimColor>{sub}</Text>
+          </Box>
         )
-      : null
 
-    const hero = (head: string, sub: string) =>
-      Svg ? (
-        <Svg source={welcomeSvg(head, sub)} alt={`${head}. ${sub}`} />
-      ) : (
-        <Box flexDirection="column">
-          <Text color={accent} bold>
-            {`💬 ${head}`}
-          </Text>
-          <Text dimColor>{sub}</Text>
+      const pill = (key: string, label: string, isActive: boolean, onPress: (press: UiPressArgument) => unknown) => (
+        <Box
+          key={key}
+          borderStyle="round"
+          borderColor={isActive ? accent : cloud}
+          backgroundColor={isActive ? accent : cloud}
+          paddingX={2}
+          hover={isActive ? undefined : { borderColor: accent }}
+        >
+          <Button key={`${key}-btn`} label={label} plain onPress={onPress} />
         </Box>
       )
 
-    const pill = (key: string, label: string, isActive: boolean, onPress: (press: UiPressArgument) => unknown) => (
-      <Box
-        key={key}
-        borderStyle="round"
-        borderColor={isActive ? accent : cloud}
-        backgroundColor={isActive ? accent : cloud}
-        paddingX={2}
-        hover={isActive ? undefined : { borderColor: accent }}
-      >
-        <Button key={`${key}-btn`} label={label} plain onPress={onPress} />
-      </Box>
-    )
+      if (v.phase === 'setup') {
+        return (
+          <Box flexDirection="column" gap={1} paddingX={1} paddingY={1}>
+            {hero('Velkommen', 'Chat med dine kolleger lige ved siden af Claude.')}
+            {card('setup', [
+              title('t', 'Hvad skal vi kalde dig?'),
+              hint('d', 'Det navn, dine kolleger ser. Du kan altid skifte det.'),
+              <Input
+                key="my-name"
+                placeholder="Dit navn"
+                submitLabel={v.isBusy ? 'et øjeblik…' : 'Kom i gang →'}
+                autoFocus
+                onSubmit={value => void setName($, value)}
+              />,
+            ])}
+            {error}
+          </Box>
+        )
+      }
 
-    if (v.phase === 'setup') {
-      return (
-        <Box flexDirection="column" gap={1} paddingX={1} paddingY={1}>
-          {hero('Velkommen', 'Chat med dine kolleger lige ved siden af Claude.')}
-          {card('setup', [
-            title('t', 'Hvad skal vi kalde dig?'),
-            hint('d', 'Det navn, dine kolleger ser. Du kan altid skifte det.'),
-            <Input
-              key="my-name"
-              placeholder="Dit navn"
-              submitLabel={v.isBusy ? 'et øjeblik…' : 'Kom i gang →'}
-              autoFocus
-              onSubmit={value => void setName($, value)}
-            />,
-          ])}
-          {error}
+      const room = c.rooms.find(r => r.id === c.roomId)
+      const reply = await read($, lastReply)
+      const text = await read($, draft)
+      const open = await read($, expanded)
+      const now = await $.clock.now()
+      const nameOf = (m: Message) => room?.members.find(x => x.user_id === m.sender_id)?.name ?? m.sender_name
+
+      const toggle = (mode: Mode) => () => setView($, { mode: v.mode === mode ? 'none' : mode, error: null })
+
+      const joinCard = card('join-card', [
+        title('t', 'Deltag i et rum'),
+        hint('d', 'Indsæt den kode, du har fået af en kollega.'),
+        <Input key="join-code" placeholder="ABCD-EF23" submitLabel={v.isBusy ? 'et øjeblik…' : 'Deltag →'} autoFocus onSubmit={value => void joinRoom($, value)} />,
+      ])
+      const newRoomCard = card('room-card', [
+        title('t', 'Opret et rum'),
+        hint('d', 'Du får en kode, som dine kolleger kan deltage med.'),
+        <Input key="new-room" placeholder="Fx Projekt Nord" submitLabel={v.isBusy ? 'et øjeblik…' : 'Opret →'} onSubmit={value => void createRoom($, value)} />,
+      ])
+      const nameCard = card('name-card', [
+        title('t', 'Skift dit navn'),
+        hint('d', `Lige nu hedder du ${c.name ?? ''}. Det nye navn gælder i alle dine rum.`),
+        <Input key="rename" placeholder={c.name ?? 'Dit navn'} submitLabel="Gem →" autoFocus onSubmit={value => void setName($, value)} />,
+      ])
+      const codeCard = room
+        ? card('code-card', [
+            title('t', `Inviter til #${room.name}`),
+            hint('d', 'Send koden til dine kolleger. De vælger "Deltag" i chatpanelet og indsætter den.'),
+            <Box key="code" flexDirection="row" alignItems="center" gap={1} flexWrap="wrap">
+              <Box borderStyle="round" borderColor={accent} paddingX={2}>
+                <Text color={accent} bold>
+                  {room.invite_code}
+                </Text>
+              </Box>
+              {pill('copy-code', '📋 Kopiér kode', false, (press: UiPressArgument) =>
+                $.ui.copy({ text: room.invite_code, surface: press.surface }).then(() => $.ui.toast('Koden er kopieret')),
+              )}
+              {pill('copy-invite', '✉️ Kopiér invitation', false, (press: UiPressArgument) =>
+                $.ui.copy({ text: invitation(room), surface: press.surface }).then(() => $.ui.toast('Invitationen er kopieret')),
+              )}
+            </Box>,
+            <Button key="leave" label="Forlad rummet" plain dimColor onPress={() => leaveRoom($)} />,
+          ])
+        : null
+
+      const modeCard =
+        v.mode === 'join' ? joinCard : v.mode === 'new-room' ? newRoomCard : v.mode === 'name' ? nameCard : v.mode === 'code' ? codeCard : null
+
+      const me = (
+        <Box key="me" flexDirection="row" alignItems="center" gap={1}>
+          {avatar(c.name ?? '?', c.me ?? '', 20)}
+          <Text color={softInk}>{c.name ?? ''}</Text>
+          <Button key="rename-toggle" label="✏️" plain dimColor onPress={toggle('name')} />
         </Box>
       )
-    }
 
-    const room = c.rooms.find(r => r.id === c.roomId)
-    const reply = await read($, lastReply)
-    const text = await read($, draft)
-    const open = await read($, expanded)
-    const now = await $.clock.now()
-    const nameOf = (m: Message) => room?.members.find(x => x.user_id === m.sender_id)?.name ?? m.sender_name
+      if (!room) {
+        return (
+          <Box flexDirection="column" gap={1} paddingX={1} paddingY={1}>
+            {hero(`Hej ${c.name ?? ''}`, 'Opret et rum, eller deltag med en kode.')}
+            {joinCard}
+            {newRoomCard}
+            {v.mode === 'name' ? nameCard : null}
+            {error}
+            <Box flexDirection="row" justifyContent="flex-end">
+              {me}
+            </Box>
+          </Box>
+        )
+      }
 
-    const toggle = (mode: Mode) => () => setView($, { mode: v.mode === mode ? 'none' : mode, error: null })
+      // Messages: grouped per person within five minutes, a pill per day, the
+      // time of a follow-up revealed while the pointer is on it.
+      const rows: RenderElement[] = []
+      c.messages.forEach((m, i) => {
+        const prev = c.messages[i - 1]
+        const day = dayLabel(m.created_at, now)
+        const isNewDay = !prev || dayLabel(prev.created_at, now) !== day
+        if (isNewDay) {
+          rows.push(
+            <Box key={`day-${m.id}`} justifyContent="center" marginTop={1} marginBottom={1}>
+              <Box borderStyle="round" borderColor={cloud} backgroundColor={cloud} paddingX={2}>
+                <Text color={softInk}>{day}</Text>
+              </Box>
+            </Box>,
+          )
+        }
+        const isMine = m.sender_id === c.me
+        const isNewGroup =
+          isNewDay || !prev || prev.sender_id !== m.sender_id || Date.parse(m.created_at) - Date.parse(prev.created_at) > 5 * 60_000
 
-    const joinCard = card('join-card', [
-      title('t', 'Deltag i et rum'),
-      hint('d', 'Indsæt den kode, du har fået af en kollega.'),
-      <Input key="join-code" placeholder="ABCD-EF23" submitLabel={v.isBusy ? 'et øjeblik…' : 'Deltag →'} autoFocus onSubmit={value => void joinRoom($, value)} />,
-    ])
-    const newRoomCard = card('room-card', [
-      title('t', 'Opret et rum'),
-      hint('d', 'Du får en kode, som dine kolleger kan deltage med.'),
-      <Input key="new-room" placeholder="Fx Projekt Nord" submitLabel={v.isBusy ? 'et øjeblik…' : 'Opret →'} onSubmit={value => void createRoom($, value)} />,
-    ])
-    const nameCard = card('name-card', [
-      title('t', 'Skift dit navn'),
-      hint('d', `Lige nu hedder du ${c.name ?? ''}. Det nye navn gælder i alle dine rum.`),
-      <Input key="rename" placeholder={c.name ?? 'Dit navn'} submitLabel="Gem →" autoFocus onSubmit={value => void setName($, value)} />,
-    ])
-    const codeCard = room
-      ? card('code-card', [
-          title('t', `Inviter til #${room.name}`),
-          hint('d', 'Send koden til dine kolleger. De vælger "Deltag" i chatpanelet og indsætter den.'),
-          <Box key="code" flexDirection="row" alignItems="center" gap={1} flexWrap="wrap">
-            <Box borderStyle="round" borderColor={accent} paddingX={2}>
-              <Text color={accent} bold>
-                {room.invite_code}
+        let bubble: RenderElement
+        if (m.kind === 'share') {
+          const isOpen = open.includes(m.id)
+          const shown = isOpen ? { text: m.body, isFolded: false } : fold(m.body)
+          const canFold = isOpen || shown.isFolded
+          bubble = (
+            <Box flexDirection="column" borderStyle="round" borderColor={lagoon} backgroundColor={mint} paddingX={2} paddingY={1} gap={1}>
+              <Text color={lagoon} bold>
+                {isMine ? '✨ Du delte et svar fra Claude' : `✨ ${nameOf(m)} delte et svar fra Claude`}
+              </Text>
+              <Markdown text={shown.text} />
+              {canFold && (
+                <Button
+                  key={`fold-${m.id}`}
+                  label={isOpen ? 'Vis mindre ↑' : 'Vis mere ↓'}
+                  plain
+                  onPress={() => update($, expanded, ids => (ids.includes(m.id) ? ids.filter(x => x !== m.id) : [...ids, m.id]))}
+                />
+              )}
+            </Box>
+          )
+        } else {
+          bubble = isMine ? (
+            <Box borderStyle="round" borderColor={accent} backgroundColor={accent} paddingX={2}>
+              <Text color="#FFFFFF" wrap="wrap">
+                {m.body}
               </Text>
             </Box>
-            {pill('copy-code', '📋 Kopiér kode', false, (press: UiPressArgument) =>
-              $.ui.copy({ text: room.invite_code, surface: press.surface }).then(() => $.ui.toast('Koden er kopieret')),
-            )}
-            {pill('copy-invite', '✉️ Kopiér invitation', false, (press: UiPressArgument) =>
-              $.ui.copy({ text: invitation(room), surface: press.surface }).then(() => $.ui.toast('Invitationen er kopieret')),
-            )}
-          </Box>,
-          <Button key="leave" label="Forlad rummet" plain dimColor onPress={() => leaveRoom($)} />,
-        ])
-      : null
+          ) : (
+            <Box borderStyle="round" borderColor={cloud} backgroundColor={cloud} paddingX={2}>
+              <Text color={ink} wrap="wrap">
+                {m.body}
+              </Text>
+            </Box>
+          )
+        }
 
-    const modeCard =
-      v.mode === 'join' ? joinCard : v.mode === 'new-room' ? newRoomCard : v.mode === 'name' ? nameCard : v.mode === 'code' ? codeCard : null
+        const hoverTime = (
+          <Box display="none" hover={{ display: 'flex' }} alignSelf="center">
+            <Text dimColor>{clock(m.created_at)}</Text>
+          </Box>
+        )
 
-    const me = (
-      <Box key="me" flexDirection="row" alignItems="center" gap={1}>
-        {avatar(c.name ?? '?', c.me ?? '', 20)}
-        <Text color={softInk}>{c.name ?? ''}</Text>
-        <Button key="rename-toggle" label="✏️" plain dimColor onPress={toggle('name')} />
-      </Box>
-    )
+        rows.push(
+          m.kind === 'share' ? (
+            <Box key={`m-${m.id}`} flexDirection="column" marginTop={1}>
+              <Text dimColor>{clock(m.created_at)}</Text>
+              {bubble}
+            </Box>
+          ) : isMine ? (
+            <Box key={`m-${m.id}`} flexDirection="column" alignItems="flex-end" marginTop={isNewGroup ? 1 : 0}>
+              {isNewGroup && <Text dimColor>{`Dig · ${clock(m.created_at)}`}</Text>}
+              <Box flexDirection="row" gap={1} alignItems="center">
+                {isNewGroup ? null : hoverTime}
+                {bubble}
+              </Box>
+            </Box>
+          ) : (
+            <Box key={`m-${m.id}`} flexDirection="row" gap={1} marginTop={isNewGroup ? 1 : 0}>
+              <Box width={4} flexShrink={0}>
+                {isNewGroup ? avatar(nameOf(m), m.sender_id, 30) : null}
+              </Box>
+              <Box flexDirection="column" flexShrink={1} alignItems="flex-start">
+                {isNewGroup && (
+                  <Box flexDirection="row" gap={1}>
+                    <Text color={colorFor(m.sender_id)} bold>
+                      {nameOf(m)}
+                    </Text>
+                    <Text dimColor>{clock(m.created_at)}</Text>
+                  </Box>
+                )}
+                <Box flexDirection="row" gap={1} alignItems="center">
+                  {bubble}
+                  {isNewGroup ? null : hoverTime}
+                </Box>
+              </Box>
+            </Box>
+          ),
+        )
+      })
 
-    if (!room) {
+      const others = room.members.filter(m => m.user_id !== c.me)
+
+      const banner = Svg ? (
+        <Svg source={roomBannerSvg(room)} alt={`#${room.name}: ${room.members.map(m => m.name).join(', ')}. Kode ${room.invite_code}`} />
+      ) : (
+        <Box flexDirection="column">
+          <Text color={accent} bold>{`# ${room.name}`}</Text>
+          <Text dimColor>{`${room.members.map(m => m.name).join(' · ')} · kode ${room.invite_code}`}</Text>
+        </Box>
+      )
+
+      const toolbar = (
+        <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
+          {c.rooms.map(r =>
+            pill(`pill-${r.id}`, r.unread > 0 && r.id !== c.roomId ? `${r.name}  ● ${r.unread}` : r.name, r.id === c.roomId, () => openRoom($, r.id)),
+          )}
+          {pill('pill-new', '＋ Nyt rum', v.mode === 'new-room', toggle('new-room'))}
+          {pill('pill-join', '⇥ Deltag', v.mode === 'join', toggle('join'))}
+          <Box flexGrow={1} />
+          {pill('pill-invite', '🔗 Inviter', v.mode === 'code', toggle('code'))}
+        </Box>
+      )
+
+      const messages =
+        rows.length === 0 ? (
+          Svg ? (
+            <Svg
+              source={emptySvg(`Velkommen til #${clip(room.name, 28)}`, others.length > 0 ? `Sig hej til ${others.map(m => m.name).join(' og ')}` : 'Inviter en kollega med 🔗 Inviter, og sig hej')}
+              alt="Ingen beskeder endnu"
+            />
+          ) : (
+            <Text dimColor>{`Ingen beskeder i #${room.name} endnu. Sig hej 👋`}</Text>
+          )
+        ) : (
+          <Box flexDirection="column">{rows}</Box>
+        )
+
+      return (
+        <Box flexDirection="column" paddingX={1} paddingY={1} gap={1} minHeight={fill}>
+          {banner}
+          {toolbar}
+          {modeCard}
+          <Box flexDirection="column" flexGrow={1} justifyContent="flex-end">
+            {messages}
+          </Box>
+          {error}
+          <Box key="composer" flexDirection="column" borderStyle="round" borderColor={skyLine} backgroundColor={sky} paddingX={2} paddingY={1} gap={1}>
+            <Input
+              key="compose"
+              placeholder={`Skriv til #${room.name}…`}
+              submitLabel="Send ➤"
+              value={text}
+              autoFocus
+              onInput={value => void update($, draft, () => value)}
+              onSubmit={value => {
+                void update($, draft, () => '')
+                void send($, value)
+              }}
+            />
+            <Box flexDirection="row" alignItems="center" gap={1}>
+              {reply && (
+                <Box key="share-pill" borderStyle="round" borderColor={lagoon} backgroundColor={mint} paddingX={1} hover={{ borderColor: accent }}>
+                  <Button key="share-reply" label="✨ Del Claudes seneste svar" plain onPress={() => send($, reply, 'share')} />
+                </Box>
+              )}
+              <Box flexGrow={1} />
+              {me}
+            </Box>
+          </Box>
+        </Box>
+      )
+    } catch (err) {
+      // Never leave the pane blank: say so, and offer a clean start.
+      const { Box, Button, Text } = $.ui.resolve(e)
+      const reason = err instanceof Error ? err.message : String(err)
+
       return (
         <Box flexDirection="column" gap={1} paddingX={1} paddingY={1}>
-          {hero(`Hej ${c.name ?? ''}`, 'Opret et rum, eller deltag med en kode.')}
-          {joinCard}
-          {newRoomCard}
-          {v.mode === 'name' ? nameCard : null}
-          {error}
-          <Box flexDirection="row" justifyContent="flex-end">
-            {me}
-          </Box>
+          <Text color={accent} bold>
+            💬 Team Chat
+          </Text>
+          <Text wrap="wrap">Chatten kunne ikke tegnes. Prøv at nulstille panelet, dine rum og dit navn bliver.</Text>
+          <Text dimColor wrap="wrap">{reason}</Text>
+          <Button key="reset" label="Nulstil panelet" onPress={() => resetPane($)} />
         </Box>
       )
     }
-
-    // Messages: grouped per person within five minutes, a pill per day, the
-    // time of a follow-up revealed while the pointer is on it.
-    const rows: RenderElement[] = []
-    c.messages.forEach((m, i) => {
-      const prev = c.messages[i - 1]
-      const day = dayLabel(m.created_at, now)
-      const isNewDay = !prev || dayLabel(prev.created_at, now) !== day
-      if (isNewDay) {
-        rows.push(
-          <Box key={`day-${m.id}`} justifyContent="center" marginTop={1} marginBottom={1}>
-            <Box borderStyle="round" borderColor={cloud} backgroundColor={cloud} paddingX={2}>
-              <Text color={softInk}>{day}</Text>
-            </Box>
-          </Box>,
-        )
-      }
-      const isMine = m.sender_id === c.me
-      const isNewGroup =
-        isNewDay || !prev || prev.sender_id !== m.sender_id || Date.parse(m.created_at) - Date.parse(prev.created_at) > 5 * 60_000
-
-      let bubble: RenderElement
-      if (m.kind === 'share') {
-        const isOpen = open.includes(m.id)
-        const shown = isOpen ? { text: m.body, isFolded: false } : fold(m.body)
-        const canFold = isOpen || shown.isFolded
-        bubble = (
-          <Box flexDirection="column" borderStyle="round" borderColor={lagoon} backgroundColor={mint} paddingX={2} paddingY={1} gap={1}>
-            <Text color={lagoon} bold>
-              {isMine ? '✨ Du delte et svar fra Claude' : `✨ ${nameOf(m)} delte et svar fra Claude`}
-            </Text>
-            <Markdown text={shown.text} />
-            {canFold && (
-              <Button
-                key={`fold-${m.id}`}
-                label={isOpen ? 'Vis mindre ↑' : 'Vis mere ↓'}
-                plain
-                onPress={() => update($, expanded, ids => (ids.includes(m.id) ? ids.filter(x => x !== m.id) : [...ids, m.id]))}
-              />
-            )}
-          </Box>
-        )
-      } else {
-        bubble = isMine ? (
-          <Box borderStyle="round" borderColor={accent} backgroundColor={accent} paddingX={2}>
-            <Text color="#FFFFFF" wrap="wrap">
-              {m.body}
-            </Text>
-          </Box>
-        ) : (
-          <Box borderStyle="round" borderColor={cloud} backgroundColor={cloud} paddingX={2}>
-            <Text color={ink} wrap="wrap">
-              {m.body}
-            </Text>
-          </Box>
-        )
-      }
-
-      const hoverTime = (
-        <Box display="none" hover={{ display: 'flex' }} alignSelf="center">
-          <Text dimColor>{clock(m.created_at)}</Text>
-        </Box>
-      )
-
-      rows.push(
-        m.kind === 'share' ? (
-          <Box key={`m-${m.id}`} flexDirection="column" marginTop={1}>
-            <Text dimColor>{clock(m.created_at)}</Text>
-            {bubble}
-          </Box>
-        ) : isMine ? (
-          <Box key={`m-${m.id}`} flexDirection="column" alignItems="flex-end" marginTop={isNewGroup ? 1 : 0}>
-            {isNewGroup && <Text dimColor>{`Dig · ${clock(m.created_at)}`}</Text>}
-            <Box flexDirection="row" gap={1} alignItems="center">
-              {isNewGroup ? null : hoverTime}
-              {bubble}
-            </Box>
-          </Box>
-        ) : (
-          <Box key={`m-${m.id}`} flexDirection="row" gap={1} marginTop={isNewGroup ? 1 : 0}>
-            <Box width={4} flexShrink={0}>
-              {isNewGroup ? avatar(nameOf(m), m.sender_id, 30) : null}
-            </Box>
-            <Box flexDirection="column" flexShrink={1} alignItems="flex-start">
-              {isNewGroup && (
-                <Box flexDirection="row" gap={1}>
-                  <Text color={colorFor(m.sender_id)} bold>
-                    {nameOf(m)}
-                  </Text>
-                  <Text dimColor>{clock(m.created_at)}</Text>
-                </Box>
-              )}
-              <Box flexDirection="row" gap={1} alignItems="center">
-                {bubble}
-                {isNewGroup ? null : hoverTime}
-              </Box>
-            </Box>
-          </Box>
-        ),
-      )
-    })
-
-    const others = room.members.filter(m => m.user_id !== c.me)
-
-    const banner = Svg ? (
-      <Svg source={roomBannerSvg(room)} alt={`#${room.name}: ${room.members.map(m => m.name).join(', ')}. Kode ${room.invite_code}`} />
-    ) : (
-      <Box flexDirection="column">
-        <Text color={accent} bold>{`# ${room.name}`}</Text>
-        <Text dimColor>{`${room.members.map(m => m.name).join(' · ')} · kode ${room.invite_code}`}</Text>
-      </Box>
-    )
-
-    const toolbar = (
-      <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
-        {c.rooms.map(r =>
-          pill(`pill-${r.id}`, r.unread > 0 && r.id !== c.roomId ? `${r.name}  ● ${r.unread}` : r.name, r.id === c.roomId, () => openRoom($, r.id)),
-        )}
-        {pill('pill-new', '＋ Nyt rum', v.mode === 'new-room', toggle('new-room'))}
-        {pill('pill-join', '⇥ Deltag', v.mode === 'join', toggle('join'))}
-        <Box flexGrow={1} />
-        {pill('pill-invite', '🔗 Inviter', v.mode === 'code', toggle('code'))}
-      </Box>
-    )
-
-    const messages =
-      rows.length === 0 ? (
-        Svg ? (
-          <Svg
-            source={emptySvg(`Velkommen til #${clip(room.name, 28)}`, others.length > 0 ? `Sig hej til ${others.map(m => m.name).join(' og ')}` : 'Inviter en kollega med 🔗 Inviter, og sig hej')}
-            alt="Ingen beskeder endnu"
-          />
-        ) : (
-          <Text dimColor>{`Ingen beskeder i #${room.name} endnu. Sig hej 👋`}</Text>
-        )
-      ) : (
-        <Box flexDirection="column">{rows}</Box>
-      )
-
-    return (
-      <Box flexDirection="column" paddingX={1} paddingY={1} gap={1} minHeight={fill}>
-        {banner}
-        {toolbar}
-        {modeCard}
-        <Box flexDirection="column" flexGrow={1} justifyContent="flex-end">
-          {messages}
-        </Box>
-        {error}
-        <Box key="composer" flexDirection="column" borderStyle="round" borderColor={skyLine} backgroundColor={sky} paddingX={2} paddingY={1} gap={1}>
-          <Input
-            key="compose"
-            placeholder={`Skriv til #${room.name}…`}
-            submitLabel="Send ➤"
-            value={text}
-            autoFocus
-            onInput={value => void update($, draft, () => value)}
-            onSubmit={value => {
-              void update($, draft, () => '')
-              void send($, value)
-            }}
-          />
-          <Box flexDirection="row" alignItems="center" gap={1}>
-            {reply && (
-              <Box key="share-pill" borderStyle="round" borderColor={lagoon} backgroundColor={mint} paddingX={1} hover={{ borderColor: accent }}>
-                <Button key="share-reply" label="✨ Del Claudes seneste svar" plain onPress={() => send($, reply, 'share')} />
-              </Box>
-            )}
-            <Box flexGrow={1} />
-            {me}
-          </Box>
-        </Box>
-      </Box>
-    )
   })
 }
