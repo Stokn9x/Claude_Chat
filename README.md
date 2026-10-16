@@ -4,18 +4,18 @@ Chat med dine kolleger i et panel lige ved siden af Claude. Intet login: vælg e
 
 ## Installér
 
-### Med Claude desktop (Windows)
+### Med Claude desktop
 
-Åbn **PowerShell**, og indsæt hele blokken:
+1. Åbn **Plugins**-fanen i Claude desktop.
+2. Indsæt adressen på dette repo, og installér:
 
-```powershell
-$roots = @("$env:APPDATA\Claude\claude-code") + (Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory -Filter "*Claude*" -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FullName)\LocalCache\Roaming\Claude\claude-code" })
-$claude = $roots | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Recurse -Filter claude.exe } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
-if (-not $claude) { $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source }
-if ($claude) { "Fandt: $claude"; & $claude plugin marketplace add Stokn9x/Claude_Chat; & $claude plugin install team-chat@team-chat } else { "Fandt ingen claude.exe" }
-```
+   ```
+   https://github.com/Stokn9x/Claude_Chat
+   ```
 
-Står der *Fandt ingen claude.exe*, så åbn Code-fanen i Claude desktop og start én session, og kør blokken igen. Start derefter en ny session i Code-fanen.
+3. Start en ny session i Code-fanen. Panelet **💬 Chat** åbner af sig selv.
+
+Opdateringer hentes samme sted, i Plugins-fanen.
 
 ### Med Claude Code i terminalen
 
@@ -27,9 +27,21 @@ Start `claude`, og skriv:
 
 Svar `y` til at tilføje marketplacen, og vælg **user**-scope med Enter.
 
-### Opdatér
+<details>
+<summary>Virker Plugins-fanen ikke? Installér og opdatér med PowerShell (Windows)</summary>
 
-Kør i PowerShell (virker i et nyt vindue), og start en ny session bagefter:
+Installér:
+
+```powershell
+$roots = @("$env:APPDATA\Claude\claude-code") + (Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory -Filter "*Claude*" -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FullName)\LocalCache\Roaming\Claude\claude-code" })
+$claude = $roots | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Recurse -Filter claude.exe } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+if (-not $claude) { $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source }
+if ($claude) { "Fandt: $claude"; & $claude plugin marketplace add Stokn9x/Claude_Chat; & $claude plugin install team-chat@team-chat } else { "Fandt ingen claude.exe" }
+```
+
+Står der *Fandt ingen claude.exe*, så åbn Code-fanen i Claude desktop og start én session, og kør blokken igen. Start derefter en ny session i Code-fanen.
+
+Opdatér, og start en ny session bagefter:
 
 ```powershell
 $roots = @("$env:APPDATA\Claude\claude-code") + (Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory -Filter "*Claude*" -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FullName)\LocalCache\Roaming\Claude\claude-code" })
@@ -37,6 +49,8 @@ $claude = $roots | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildIte
 if (-not $claude) { $claude = (Get-Command claude -ErrorAction SilentlyContinue).Source }
 if ($claude) { & $claude plugin marketplace update team-chat; & $claude plugin update team-chat@team-chat; & $claude plugin list } else { "Fandt ingen claude.exe" }
 ```
+
+</details>
 
 ## Kom i gang
 
